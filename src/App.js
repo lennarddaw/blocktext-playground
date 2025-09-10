@@ -1,8 +1,8 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
 
-// Fully 1:1 SVG export with embedded font (data URL) via file upload or optional fetch from same-origin URL.
-// Uses <foreignObject> to preserve justify, letter/word-spacing, line-height, padding, width, etc.
-// If you need absolute compatibility with tools that don't support foreignObject, export a PNG separately.
+// 1:1 SVG export mit eingebetteter lokaler Schrift (foreignObject)
+// - Lädt Montserrat Variable-TTF automatisch aus /public/fonts/montserrat/
+// - Betten als data: URL in das SVG ein (keine manuelle Eingabe nötig)
 
 const HTMLCSSPlayground = () => {
   const [text, setText] = useState(
@@ -22,9 +22,9 @@ const HTMLCSSPlayground = () => {
     fontFamily: "Montserrat, sans-serif",
   });
 
-  // --- Font embedding ---
-  const [fontUrl, setFontUrl] = useState(""); // optional: same-origin WOFF/WOFF2 to embed (CORS must allow)
-  const [fontDataUrl, setFontDataUrl] = useState(""); // data: URL after file upload or fetch
+  // --- Eingebettete Font-Daten (auto load aus /public) ---
+  const [fontDataUrl, setFontDataUrl] = useState("");         // Montserrat Variable (normal)
+  const [fontDataUrlItalic, setFontDataUrlItalic] = useState(""); // Montserrat Variable (italic, optional)
 
   const containerRef = useRef(null);
   const blockRef = useRef(null);
@@ -59,50 +59,49 @@ const HTMLCSSPlayground = () => {
     { label: "Weiß", value: "#ffffff" },
   ];
 
+  // ---------- Fonts automatisch einbetten ----------
+  useEffect(() => {
+    autoEmbed("/fonts/montserrat/Montserrat-VariableFont_wght.ttf", setFontDataUrl);
+    autoEmbed("/fonts/montserrat/Montserrat-Italic-VariableFont_wght.ttf", setFontDataUrlItalic); // optional
+  }, []);
+
+  async function autoEmbed(path, setter) {
+    try {
+      const res = await fetch(path); // same-origin → kein CORS-Problem
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const buf = await res.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      setter(`data:font/ttf;base64,${b64}`);
+    } catch (e) {
+      console.warn("Font embed failed:", e);
+    }
+  }
+
   // ---------- Helpers ----------
   const cssTextBlock = () => {
-    // Keep CSS minimal but 1:1 with state and typical text rendering flags
-    return `.text-block{
-`+
-      `background-color:${styles.backgroundColor};
-`+
-      `color:${styles.color};
-`+
-      `width:${styles.width}px;
-`+
-      `letter-spacing:${styles.letterSpacing}px;
-`+
-      `word-spacing:${styles.wordSpacing}px;
-`+
-      `line-height:${styles.lineHeight};
-`+
-      `font-size:${styles.fontSize}px;
-`+
-      `text-align:${styles.textAlign};
-`+
-      `text-align-last:left;
-`+
-      `padding:${styles.padding}px;
-`+
-      `font-family:${styles.fontFamily};
-`+
-      `white-space:pre-wrap;
-`+
-      `hyphens:auto;
-`+
-      `-webkit-hyphens:auto;
-`+
-      `-moz-hyphens:auto;
-`+
-      `word-break:normal;
-`+
-      `overflow-wrap:break-word;
-`+
-      `-webkit-font-smoothing:antialiased;
-`+
-      `-moz-osx-font-smoothing:grayscale;
-`+
-      `}`;
+    return (
+`.text-block{
+background-color:${styles.backgroundColor};
+color:${styles.color};
+width:${styles.width}px;
+letter-spacing:${styles.letterSpacing}px;
+word-spacing:${styles.wordSpacing}px;
+line-height:${styles.lineHeight};
+font-size:${styles.fontSize}px;
+text-align:${styles.textAlign};
+text-align-last:left;
+padding:${styles.padding}px;
+font-family:${styles.fontFamily};
+white-space:pre-wrap;
+hyphens:auto;
+-webkit-hyphens:auto;
+-moz-hyphens:auto;
+word-break:normal;
+overflow-wrap:break-word;
+-webkit-font-smoothing:antialiased;
+-moz-osx-font-smoothing:grayscale;
+}`
+    );
   };
 
   const escapeHtml = (str) =>
@@ -110,96 +109,64 @@ const HTMLCSSPlayground = () => {
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/\"/g, "&quot;")
+      .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
 
   const measureBlock = () => {
     const node = blockRef.current;
     if (!node) return { width: styles.width, height: 200 };
-    // offsetWidth/Height includes padding; getBoundingClientRect for fractional precision
     const { width, height } = node.getBoundingClientRect();
     return { width: Math.ceil(width), height: Math.ceil(height) };
   };
 
-  const sniffFormatFromDataUrl = (dataUrl) => {
-    if (!dataUrl) return "woff2";
-    if (dataUrl.startsWith("data:font/woff2")) return "woff2";
-    if (dataUrl.startsWith("data:font/woff")) return "woff";
-    if (dataUrl.startsWith("data:font/ttf")) return "truetype";
-    if (dataUrl.startsWith("data:font/otf")) return "opentype";
-    return "woff2";
-  };
-
   const buildFontFace = () => {
-    // Embed only if user provided data URL (via upload or successful fetch)
-    const fam = styles.fontFamily.split(",")[0].trim();
-    if (!fontDataUrl) return "";
-    const fmt = sniffFormatFromDataUrl(fontDataUrl);
-    return `@font-face{
+    const fam = styles.fontFamily.split(",")[0].trim(); // "Montserrat"
+    let css = "";
+    if (fontDataUrl) {
+      css += `@font-face{
   font-family:'${fam}';
-  src:url('${fontDataUrl}') format('${fmt}');
-  font-weight:normal;
+  src:url('${fontDataUrl}') format('truetype');
+  font-weight:100 900;
   font-style:normal;
   font-display:block;
 }`;
-  };
-
-  // ---------- Font file upload -> data URL ----------
-  const onFontFile = async (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setFontDataUrl(reader.result);
-    reader.readAsDataURL(file);
-  };
-
-  // ---------- Optional fetch font from same-origin URL ----------
-  const fetchFontAsDataUrl = async () => {
-    if (!fontUrl) return;
-    try {
-      const res = await fetch(fontUrl, { mode: "cors" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const buf = await res.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
-      const ext = fontUrl.toLowerCase().endsWith(".woff2") ? "woff2" : fontUrl.toLowerCase().endsWith(".woff") ? "woff" : fontUrl.toLowerCase().endsWith(".otf") ? "otf" : "ttf";
-      const mime = ext === "woff2" ? "font/woff2" : ext === "woff" ? "font/woff" : ext === "otf" ? "font/otf" : "font/ttf";
-      setFontDataUrl(`data:${mime};base64,${base64}`);
-    } catch (e) {
-      alert("Font konnte nicht geladen werden (CORS?). Bitte Datei hochladen.");
-      console.error(e);
     }
+    if (fontDataUrlItalic) {
+      css += `@font-face{
+  font-family:'${fam}';
+  src:url('${fontDataUrlItalic}') format('truetype');
+  font-weight:100 900;
+  font-style:italic;
+  font-display:block;
+}`;
+    }
+    return css;
   };
 
   // ---------- Export: foreignObject (1:1 fidelity) ----------
   const exportSVGForeignObject = () => {
     const { width, height } = measureBlock();
 
-    const fam = styles.fontFamily.split(",")[0].trim();
-    const headStyle = `*{margin:0;box-sizing:border-box;}
-${buildFontFace()}
-${cssTextBlock()}`;
+    const headStyle =
+      `*{margin:0;box-sizing:border-box;}\n` +
+      buildFontFace() + "\n" +
+      cssTextBlock();
 
-    // Use pre-wrap to preserve line breaks; HTML entity escaping already done.
-    const html = `<div xmlns=\"http://www.w3.org/1999/xhtml\">
+    const html =
+`<div xmlns="http://www.w3.org/1999/xhtml">
   <style>
 ${headStyle}
   </style>
-  <div class=\"text-block\">${escapeHtml(text)}</div>
+  <div class="text-block">${escapeHtml(text)}</div>
 </div>`;
 
-    const svg = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>
-` +
-      `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">
-` +
-      `  <foreignObject x=\"0\" y=\"0\" width=\"${width}\" height=\"${height}\">
-` +
-      `    ${html}
-` +
-      `  </foreignObject>
-` +
-      `</svg>`;
+    const svg =
+`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <foreignObject x="0" y="0" width="${width}" height="${height}">
+    ${html}
+  </foreignObject>
+</svg>`;
 
     triggerDownload(svg, "typography_export_1to1.svg");
   };
@@ -265,7 +232,9 @@ ${headStyle}
                         onClick={() => updateStyle("backgroundColor", c.value)}
                         title={c.label}
                         aria-label={c.label}
-                        className={`w-8 h-8 rounded border border-gray-300 hover:opacity-80 focus:outline-none ${styles.backgroundColor === c.value ? "ring-2 ring-blue-500 ring-offset-2" : ""}`}
+                        className={`w-8 h-8 rounded border border-gray-300 hover:opacity-80 focus:outline-none ${
+                          styles.backgroundColor === c.value ? "ring-2 ring-blue-500 ring-offset-2" : ""
+                        }`}
                         style={{ backgroundColor: c.value }}
                       />
                     ))}
@@ -306,34 +275,6 @@ ${headStyle}
                   </option>
                 ))}
               </select>
-            </div>
-
-            {/* Font embedding controls */}
-            <div className="mb-6 space-y-2">
-              <label className="block text-sm font-medium text-gray-700">Webfont einbetten (für 1:1 SVG):</label>
-              <input
-                type="file"
-                accept=".woff,.woff2,.ttf,.otf"
-                onChange={(e) => onFontFile(e.target.files?.[0])}
-                className="w-full p-2 border border-gray-300 rounded text-sm"
-              />
-              <div className="flex items-center gap-2">
-                <input
-                  type="url"
-                  placeholder="https://deine-domain/fonts/Montserrat.woff2"
-                  value={fontUrl}
-                  onChange={(e) => setFontUrl(e.target.value)}
-                  className="flex-1 p-2 border border-gray-300 rounded text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={fetchFontAsDataUrl}
-                  className="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800"
-                >
-                  Laden
-                </button>
-              </div>
-              <p className="text-xs text-gray-500">Tipp: Google Fonts direkt blockiert oft CORS. Besser selbst hosten oder Datei hochladen. Eingebettete Schrift wird als data URL in das SVG geschrieben.</p>
             </div>
 
             {/* Block-Breite */}
@@ -438,16 +379,15 @@ ${headStyle}
               Zurücksetzen
             </button>
 
-            {/* Export Buttons */}
-            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Export */}
+            <div className="mt-6">
               <button
                 onClick={exportSVGForeignObject}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
-                Export SVG – 1:1 (embedded font)
+                Export SVG – 1:1 (embedded Montserrat)
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">Für 1:1 Ergebnis muss die verwendete Schrift eingebettet sein (Datei hochladen oder gleiche Domain + CORS erlauben und "Laden" klicken).</p>
           </div>
 
           {/* Vorschau */}
@@ -483,7 +423,9 @@ ${headStyle}
             {/* CSS Code */}
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-700">Generierter CSS Code:</h3>
-              <pre className="bg-gray-100 p-4 rounded text-sm overflow-x-auto text-gray-800">{cssTextBlock()}</pre>
+              <pre className="bg-gray-100 p-4 rounded text-sm overflow-x-auto text-gray-800">
+                {cssTextBlock()}
+              </pre>
             </div>
           </div>
         </div>
