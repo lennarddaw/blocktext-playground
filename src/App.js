@@ -1,27 +1,33 @@
-import { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from "react";
+
+// Fully 1:1 SVG export with embedded font (data URL) via file upload or optional fetch from same-origin URL.
+// Uses <foreignObject> to preserve justify, letter/word-spacing, line-height, padding, width, etc.
+// If you need absolute compatibility with tools that don't support foreignObject, export a PNG separately.
 
 const HTMLCSSPlayground = () => {
   const [text, setText] = useState(
-    'Das Thema: Verschattung als architektonisches Gestaltungselement. Anders, ungewöhnlich und provokant wirkt diese Architektur als Zeichen unserer Zeit ganz selbstverständlich neben dem Backsteingebäude des alten Bahnhofs in Montabaur. Die oberen Stockwerke beider Gebäudeblocks haben jeweils eine Penthouse-Artrium-Wohnung mit einem exklusiven Rundumblick über Montabaur und den Westerwald. Alle Zimmer haben einen Ausgang auf die jeweils innenliegende Terrasse im Loungestyle.'
+    "Das Thema: Verschattung als architektonisches Gestaltungselement. Anders, ungewöhnlich und provokant wirkt diese Architektur als Zeichen unserer Zeit ganz selbstverständlich neben dem Backsteingebäude des alten Bahnhofs in Montabaur. Die oberen Stockwerke beider Gebäudeblocks haben jeweils eine Penthouse-Artrium-Wohnung mit einem exklusiven Rundumblick über Montabaur und den Westerwald. Alle Zimmer haben einen Ausgang auf die jeweils innenliegende Terrasse im Loungestyle."
   );
 
   const [styles, setStyles] = useState({
-    backgroundColor: '#2e546f',
-    color: '#ffffff',
+    backgroundColor: "#2e546f",
+    color: "#ffffff",
     width: 600,
     letterSpacing: 0,
     wordSpacing: 0,
     lineHeight: 1.5,
     fontSize: 18,
-    textAlign: 'justify',
+    textAlign: "justify",
     padding: 20,
-    fontFamily: 'Montserrat, sans-serif',
+    fontFamily: "Montserrat, sans-serif",
   });
 
-  const [fontUrl, setFontUrl] = useState(''); // optional: self-hosted WOFF/WOFF2 to embed
+  // --- Font embedding ---
+  const [fontUrl, setFontUrl] = useState(""); // optional: same-origin WOFF/WOFF2 to embed (CORS must allow)
+  const [fontDataUrl, setFontDataUrl] = useState(""); // data: URL after file upload or fetch
 
-  const containerRef = useRef(null); // dashed preview frame
-  const blockRef = useRef(null); // the colored text block to export
+  const containerRef = useRef(null);
+  const blockRef = useRef(null);
 
   const updateStyle = (property, value) => {
     setStyles((prev) => ({ ...prev, [property]: value }));
@@ -29,118 +35,179 @@ const HTMLCSSPlayground = () => {
 
   const fonts = useMemo(
     () => [
-      'Montserrat, sans-serif',
-      'Helvetica, sans-serif',
-      'Georgia, serif',
-      'Times New Roman, serif',
-      'Courier New, monospace',
-      'Verdana, sans-serif',
-      'Trebuchet MS, sans-serif',
+      "Montserrat, sans-serif",
+      "Helvetica, sans-serif",
+      "Georgia, serif",
+      "Times New Roman, serif",
+      "Courier New, monospace",
+      "Verdana, sans-serif",
+      "Trebuchet MS, sans-serif",
     ],
     []
   );
 
-// neben fonts:
   const bgPresets = [
-  { label: 'Primary',           value: '#FF0000' },
-  { label: 'Secondary',         value: '#958F80' },
-  { label: 'Home Staging',      value: '#635448' },
-  { label: 'Light Work',        value: '#906c4c' },
-  { label: 'Light Sculpture',   value: '#958F80' }, // gleiche Farbe wie Secondary
-  { label: 'Architecture',      value: '#2e546f' },
-  { label: 'Himmel Blau',       value: '#3b6493' },
-  { label: 'Brown',             value: '#6f5b4a' },
-  { label: 'Khakigrau',         value: '#756444' },
-  { label: 'Weiß',              value: '#ffffff' },
-];
-
-
+    { label: "Primary", value: "#FF0000" },
+    { label: "Secondary", value: "#958F80" },
+    { label: "Home Staging", value: "#635448" },
+    { label: "Light Work", value: "#906c4c" },
+    { label: "Light Sculpture", value: "#958F80" },
+    { label: "Architecture", value: "#2e546f" },
+    { label: "Himmel Blau", value: "#3b6493" },
+    { label: "Brown", value: "#6f5b4a" },
+    { label: "Khakigrau", value: "#756444" },
+    { label: "Weiß", value: "#ffffff" },
+  ];
 
   // ---------- Helpers ----------
-  const cssTextBlock = useMemo(() => {
-    return `.text-block {\n  background-color: ${styles.backgroundColor};\n  color: ${styles.color};\n  width: ${styles.width}px;\n  letter-spacing: ${styles.letterSpacing}px;\n  word-spacing: ${styles.wordSpacing}px;\n  line-height: ${styles.lineHeight};\n  font-size: ${styles.fontSize}px;\n  text-align: ${styles.textAlign};\n  padding: ${styles.padding}px;\n  font-family: ${styles.fontFamily};\n  border-radius: 4px;\n}`;
-  }, [styles]);
+  const cssTextBlock = () => {
+    // Keep CSS minimal but 1:1 with state and typical text rendering flags
+    return `.text-block{
+`+
+      `background-color:${styles.backgroundColor};
+`+
+      `color:${styles.color};
+`+
+      `width:${styles.width}px;
+`+
+      `letter-spacing:${styles.letterSpacing}px;
+`+
+      `word-spacing:${styles.wordSpacing}px;
+`+
+      `line-height:${styles.lineHeight};
+`+
+      `font-size:${styles.fontSize}px;
+`+
+      `text-align:${styles.textAlign};
+`+
+      `text-align-last:left;
+`+
+      `padding:${styles.padding}px;
+`+
+      `font-family:${styles.fontFamily};
+`+
+      `white-space:pre-wrap;
+`+
+      `hyphens:auto;
+`+
+      `-webkit-hyphens:auto;
+`+
+      `-moz-hyphens:auto;
+`+
+      `word-break:normal;
+`+
+      `overflow-wrap:break-word;
+`+
+      `-webkit-font-smoothing:antialiased;
+`+
+      `-moz-osx-font-smoothing:grayscale;
+`+
+      `}`;
+  };
 
   const escapeHtml = (str) =>
-    (str || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
+    (str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
 
-  const computeBlockSize = () => {
+  const measureBlock = () => {
     const node = blockRef.current;
     if (!node) return { width: styles.width, height: 200 };
-    const rect = node.getBoundingClientRect();
-    return { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+    // offsetWidth/Height includes padding; getBoundingClientRect for fractional precision
+    const { width, height } = node.getBoundingClientRect();
+    return { width: Math.ceil(width), height: Math.ceil(height) };
+  };
+
+  const sniffFormatFromDataUrl = (dataUrl) => {
+    if (!dataUrl) return "woff2";
+    if (dataUrl.startsWith("data:font/woff2")) return "woff2";
+    if (dataUrl.startsWith("data:font/woff")) return "woff";
+    if (dataUrl.startsWith("data:font/ttf")) return "truetype";
+    if (dataUrl.startsWith("data:font/otf")) return "opentype";
+    return "woff2";
   };
 
   const buildFontFace = () => {
-    if (!fontUrl) return '';
-    const fam = styles.fontFamily.split(',')[0].trim().replace(/\s+/g, ' ');
-    return `@font-face {\n  font-family: '${fam}';\n  src: url('${fontUrl}') format('${fontUrl.toLowerCase().endsWith('woff2') ? 'woff2' : 'woff'}');\n  font-weight: normal;\n  font-style: normal;\n}`;
+    // Embed only if user provided data URL (via upload or successful fetch)
+    const fam = styles.fontFamily.split(",")[0].trim();
+    if (!fontDataUrl) return "";
+    const fmt = sniffFormatFromDataUrl(fontDataUrl);
+    return `@font-face{
+  font-family:'${fam}';
+  src:url('${fontDataUrl}') format('${fmt}');
+  font-weight:normal;
+  font-style:normal;
+  font-display:block;
+}`;
   };
 
-  // ---------- Export Method A: foreignObject (best visual fidelity) ----------
-  const exportSVGForeignObject = () => {
-    const { width, height } = computeBlockSize();
-
-    // Ensure the HTML we embed is minimal and self-contained
-    const html = `<div xmlns=\"http://www.w3.org/1999/xhtml\">\n  <style>\n    *{margin:0;box-sizing:border-box;}\n    ${buildFontFace()}\n    ${cssTextBlock}\n  </style>\n  <div class=\"text-block\">${escapeHtml(text).replace(/\n/g, '<br/>')}</div>\n</div>`;
-
-    const svg = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">\n  <!-- Background as vector rect for robust rendering -->\n  <rect width=\"100%\" height=\"100%\" fill=\"${styles.backgroundColor}\" rx=\"4\" ry=\"4\"/>\n  <foreignObject x=\"0\" y=\"0\" width=\"${width}\" height=\"${height}\">\n    ${html}\n  </foreignObject>\n</svg>`;
-
-    triggerDownload(svg, 'typography_export_foreignObject.svg');
+  // ---------- Font file upload -> data URL ----------
+  const onFontFile = async (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setFontDataUrl(reader.result);
+    reader.readAsDataURL(file);
   };
 
-  // ---------- Export Method B: pure SVG <text>/<tspan> (max compatibility) ----------
-  // This method approximates wrapping (no justify). It measures with a hidden canvas.
-  const exportSVGPure = () => {
-    const { width } = computeBlockSize();
-    const maxWidth = width - styles.padding * 2; // inner content width
-
-    // Setup canvas for measuring
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const fontFamilyOnly = styles.fontFamily.split(',')[0];
-    ctx.font = `${styles.fontSize}px ${fontFamilyOnly}`;
-
-    const words = (text || '').split(/\s+/);
-    const lines = [];
-    let current = '';
-    for (let w of words) {
-      const trial = current ? current + ' ' + w : w;
-      const metrics = ctx.measureText(trial);
-      if (metrics.width > maxWidth && current) {
-        lines.push(current);
-        current = w;
-      } else {
-        current = trial;
-      }
+  // ---------- Optional fetch font from same-origin URL ----------
+  const fetchFontAsDataUrl = async () => {
+    if (!fontUrl) return;
+    try {
+      const res = await fetch(fontUrl, { mode: "cors" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const buf = await res.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+      const ext = fontUrl.toLowerCase().endsWith(".woff2") ? "woff2" : fontUrl.toLowerCase().endsWith(".woff") ? "woff" : fontUrl.toLowerCase().endsWith(".otf") ? "otf" : "ttf";
+      const mime = ext === "woff2" ? "font/woff2" : ext === "woff" ? "font/woff" : ext === "otf" ? "font/otf" : "font/ttf";
+      setFontDataUrl(`data:${mime};base64,${base64}`);
+    } catch (e) {
+      alert("Font konnte nicht geladen werden (CORS?). Bitte Datei hochladen.");
+      console.error(e);
     }
-    if (current) lines.push(current);
+  };
 
-    const lineHeightPx = Math.round(styles.fontSize * styles.lineHeight);
-    const height = styles.padding * 2 + lines.length * lineHeightPx;
+  // ---------- Export: foreignObject (1:1 fidelity) ----------
+  const exportSVGForeignObject = () => {
+    const { width, height } = measureBlock();
 
-    // Build tspans
-    const tspans = lines
-      .map((line, i) => {
-        const y = styles.padding + styles.fontSize + i * lineHeightPx;
-        return `    <tspan x=\"${styles.padding}\" y=\"${y}\">${escapeHtml(line)}</tspan>`;
-      })
-      .join('\n');
+    const fam = styles.fontFamily.split(",")[0].trim();
+    const headStyle = `*{margin:0;box-sizing:border-box;}
+${buildFontFace()}
+${cssTextBlock()}`;
 
-    const svg = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">\n  <defs>\n    ${fontUrl ? `<style><![CDATA[${buildFontFace()}]]></style>` : ''}\n  </defs>\n  <rect width=\"100%\" height=\"100%\" fill=\"${styles.backgroundColor}\" rx=\"4\" ry=\"4\"/>\n  <text fill=\"${styles.color}\" font-family=\"${styles.fontFamily.split(',')[0]}\" font-size=\"${styles.fontSize}\" letter-spacing=\"${styles.letterSpacing}\" >\n${tspans}\n  </text>\n</svg>`;
+    // Use pre-wrap to preserve line breaks; HTML entity escaping already done.
+    const html = `<div xmlns=\"http://www.w3.org/1999/xhtml\">
+  <style>
+${headStyle}
+  </style>
+  <div class=\"text-block\">${escapeHtml(text)}</div>
+</div>`;
 
-    triggerDownload(svg, 'typography_export_pure.svg');
+    const svg = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+` +
+      `<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${width}\" height=\"${height}\" viewBox=\"0 0 ${width} ${height}\">
+` +
+      `  <foreignObject x=\"0\" y=\"0\" width=\"${width}\" height=\"${height}\">
+` +
+      `    ${html}
+` +
+      `  </foreignObject>
+` +
+      `</svg>`;
+
+    triggerDownload(svg, "typography_export_1to1.svg");
   };
 
   const triggerDownload = (svgString, filename) => {
-    const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
     a.download = filename;
     document.body.appendChild(a);
@@ -178,15 +245,31 @@ const HTMLCSSPlayground = () => {
                   <input
                     type="color"
                     value={styles.backgroundColor}
-                    onChange={(e) => updateStyle('backgroundColor', e.target.value)}
+                    onChange={(e) => updateStyle("backgroundColor", e.target.value)}
                     className="w-12 h-10 border border-gray-300 rounded cursor-pointer"
                   />
                   <input
                     type="text"
                     value={styles.backgroundColor}
-                    onChange={(e) => updateStyle('backgroundColor', e.target.value)}
+                    onChange={(e) => updateStyle("backgroundColor", e.target.value)}
                     className="flex-1 p-2 border border-gray-300 rounded text-sm"
                   />
+                </div>
+                {/* Presets */}
+                <div className="mt-3">
+                  <div className="flex flex-wrap gap-2">
+                    {bgPresets.map((c) => (
+                      <button
+                        key={c.value}
+                        type="button"
+                        onClick={() => updateStyle("backgroundColor", c.value)}
+                        title={c.label}
+                        aria-label={c.label}
+                        className={`w-8 h-8 rounded border border-gray-300 hover:opacity-80 focus:outline-none ${styles.backgroundColor === c.value ? "ring-2 ring-blue-500 ring-offset-2" : ""}`}
+                        style={{ backgroundColor: c.value }}
+                      />
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -196,64 +279,61 @@ const HTMLCSSPlayground = () => {
                   <input
                     type="color"
                     value={styles.color}
-                    onChange={(e) => updateStyle('color', e.target.value)}
+                    onChange={(e) => updateStyle("color", e.target.value)}
                     className="w-12 h-10 border border-gray-300 rounded cursor-pointer"
                   />
                   <input
                     type="text"
                     value={styles.color}
-                    onChange={(e) => updateStyle('color', e.target.value)}
+                    onChange={(e) => updateStyle("color", e.target.value)}
                     className="flex-1 p-2 border border-gray-300 rounded text-sm"
                   />
                 </div>
               </div>
             </div>
-            {/* Preset-Farben */}
-<div className="mt-3">
-  <div className="flex flex-wrap gap-2">
-    {bgPresets.map((c) => (
-      <button
-        key={c.value}
-        type="button"
-        onClick={() => updateStyle('backgroundColor', c.value)}
-        title={c.label}
-        aria-label={c.label}
-        className={`w-8 h-8 rounded border border-gray-300 hover:opacity-80 focus:outline-none
-                    ${styles.backgroundColor === c.value ? 'ring-2 ring-blue-500 ring-offset-2' : ''}`}
-        style={{ backgroundColor: c.value }}
-      />
-    ))}
-  </div>
-</div>
-
 
             {/* Schriftart */}
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">Schriftart:</label>
               <select
                 value={styles.fontFamily}
-                onChange={(e) => updateStyle('fontFamily', e.target.value)}
+                onChange={(e) => updateStyle("fontFamily", e.target.value)}
                 className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
               >
                 {fonts.map((font) => (
                   <option key={font} value={font} style={{ fontFamily: font }}>
-                    {font.split(',')[0]}
+                    {font.split(",")[0]}
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Optional: eingebettete Webfont-URL */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Optional: WOFF/WOFF2-URL zum Einbetten (CORS erlaubt):</label>
+            {/* Font embedding controls */}
+            <div className="mb-6 space-y-2">
+              <label className="block text-sm font-medium text-gray-700">Webfont einbetten (für 1:1 SVG):</label>
               <input
-                type="url"
-                placeholder="https://example.com/fonts/Montserrat.woff2"
-                value={fontUrl}
-                onChange={(e) => setFontUrl(e.target.value)}
+                type="file"
+                accept=".woff,.woff2,.ttf,.otf"
+                onChange={(e) => onFontFile(e.target.files?.[0])}
                 className="w-full p-2 border border-gray-300 rounded text-sm"
               />
-              <p className="text-xs text-gray-500 mt-1">Hinweis: Für Google Fonts direkt ist CORS meist blockiert. Besser selbst hosten.</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="url"
+                  placeholder="https://deine-domain/fonts/Montserrat.woff2"
+                  value={fontUrl}
+                  onChange={(e) => setFontUrl(e.target.value)}
+                  className="flex-1 p-2 border border-gray-300 rounded text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={fetchFontAsDataUrl}
+                  className="px-3 py-2 bg-gray-700 text-white rounded hover:bg-gray-800"
+                >
+                  Laden
+                </button>
+              </div>
+              <p className="text-xs text-gray-500">Tipp: Google Fonts direkt blockiert oft CORS. Besser selbst hosten oder Datei hochladen. Eingebettete Schrift wird als data URL in das SVG geschrieben.</p>
             </div>
 
             {/* Block-Breite */}
@@ -264,7 +344,7 @@ const HTMLCSSPlayground = () => {
                 min="200"
                 max="800"
                 value={styles.width}
-                onChange={(e) => updateStyle('width', parseInt(e.target.value))}
+                onChange={(e) => updateStyle("width", parseInt(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -277,7 +357,7 @@ const HTMLCSSPlayground = () => {
                 min="12"
                 max="48"
                 value={styles.fontSize}
-                onChange={(e) => updateStyle('fontSize', parseInt(e.target.value))}
+                onChange={(e) => updateStyle("fontSize", parseInt(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -291,7 +371,7 @@ const HTMLCSSPlayground = () => {
                 max="5"
                 step="0.1"
                 value={styles.letterSpacing}
-                onChange={(e) => updateStyle('letterSpacing', parseFloat(e.target.value))}
+                onChange={(e) => updateStyle("letterSpacing", parseFloat(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -305,7 +385,7 @@ const HTMLCSSPlayground = () => {
                 max="10"
                 step="0.5"
                 value={styles.wordSpacing}
-                onChange={(e) => updateStyle('wordSpacing', parseFloat(e.target.value))}
+                onChange={(e) => updateStyle("wordSpacing", parseFloat(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -319,7 +399,7 @@ const HTMLCSSPlayground = () => {
                 max="3"
                 step="0.1"
                 value={styles.lineHeight}
-                onChange={(e) => updateStyle('lineHeight', parseFloat(e.target.value))}
+                onChange={(e) => updateStyle("lineHeight", parseFloat(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -332,7 +412,7 @@ const HTMLCSSPlayground = () => {
                 min="0"
                 max="50"
                 value={styles.padding}
-                onChange={(e) => updateStyle('padding', parseInt(e.target.value))}
+                onChange={(e) => updateStyle("padding", parseInt(e.target.value))}
                 className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
               />
             </div>
@@ -341,16 +421,16 @@ const HTMLCSSPlayground = () => {
             <button
               onClick={() =>
                 setStyles({
-                  backgroundColor: '#ffffff',
-                  color: '#000000',
+                  backgroundColor: "#ffffff",
+                  color: "#000000",
                   width: 600,
                   letterSpacing: 0,
                   wordSpacing: 0,
                   lineHeight: 1.5,
                   fontSize: 16,
-                  textAlign: 'justify',
+                  textAlign: "justify",
                   padding: 20,
-                  fontFamily: 'Arial, sans-serif',
+                  fontFamily: "Arial, sans-serif",
                 })
               }
               className="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
@@ -364,23 +444,15 @@ const HTMLCSSPlayground = () => {
                 onClick={exportSVGForeignObject}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
-                Export SVG – HTML (fidelity)
-              </button>
-              <button
-                onClick={exportSVGPure}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded transition-colors"
-              >
-                Export SVG – Pure SVG
+                Export SVG – 1:1 (embedded font)
               </button>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              Tipp: Für Druckvorstufe nutze "Pure SVG" (höchste Kompatibilität). Für 1:1-Layout inkl. Blocksatz nutze "HTML (fidelity)".
-            </p>
+            <p className="text-xs text-gray-500 mt-2">Für 1:1 Ergebnis muss die verwendete Schrift eingebettet sein (Datei hochladen oder gleiche Domain + CORS erlauben und "Laden" klicken).</p>
           </div>
 
           {/* Vorschau */}
           <div className="bg-white rounded-lg shadow-lg p-6">
-            <h2 className="text-xl font-semibold mb-6 text-gray-700">Live-Vorschau</h2>
+            <h2 className="text-xl font-semibold mb-6 text-gray-700">Vorschau</h2>
 
             <div
               ref={containerRef}
@@ -392,7 +464,7 @@ const HTMLCSSPlayground = () => {
                   backgroundColor: styles.backgroundColor,
                   color: styles.color,
                   width: `${styles.width}px`,
-                  maxWidth: '100%',
+                  maxWidth: "100%",
                   letterSpacing: `${styles.letterSpacing}px`,
                   wordSpacing: `${styles.wordSpacing}px`,
                   lineHeight: styles.lineHeight,
@@ -400,21 +472,18 @@ const HTMLCSSPlayground = () => {
                   textAlign: styles.textAlign,
                   padding: `${styles.padding}px`,
                   fontFamily: styles.fontFamily,
-                  borderRadius: '0px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  borderRadius: "0px",
                 }}
                 className="transition-all duration-200"
               >
-                {text || 'Hier wird dein Text angezeigt...'}
+                {text || "Hier wird dein Text angezeigt..."}
               </div>
             </div>
 
             {/* CSS Code */}
             <div className="mt-6">
               <h3 className="text-lg font-semibold mb-3 text-gray-700">Generierter CSS Code:</h3>
-              <pre className="bg-gray-100 p-4 rounded text-sm overflow-x-auto text-gray-800">
-                {`.text-block {\n  background-color: ${styles.backgroundColor};\n  color: ${styles.color};\n  width: ${styles.width}px;\n  letter-spacing: ${styles.letterSpacing}px;\n  word-spacing: ${styles.wordSpacing}px;\n  line-height: ${styles.lineHeight};\n  font-size: ${styles.fontSize}px;\n  text-align: ${styles.textAlign};\n  padding: ${styles.padding}px;\n  font-family: ${styles.fontFamily};\n}`}
-              </pre>
+              <pre className="bg-gray-100 p-4 rounded text-sm overflow-x-auto text-gray-800">{cssTextBlock()}</pre>
             </div>
           </div>
         </div>
