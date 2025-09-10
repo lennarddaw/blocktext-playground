@@ -17,7 +17,7 @@ const HTMLCSSPlayground = () => {
     letterSpacing: -0.4,
     wordSpacing: -2,
     lineHeight: 1.5,
-    fontSize: 14,
+    fontSize: 16,
     textAlign: "justify",
     // Abstände
     padding: 0,            // oben/unten
