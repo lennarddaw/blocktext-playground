@@ -13,14 +13,14 @@ const HTMLCSSPlayground = () => {
     // Grundwerte
     backgroundColor: "#2e546f",
     color: "#ffffff",
-    width: 600,
-    letterSpacing: 0,
-    wordSpacing: 0,
+    width: 271,
+    letterSpacing: -0.4,
+    wordSpacing: -2,
     lineHeight: 1.5,
-    fontSize: 18,
+    fontSize: 14,
     textAlign: "justify",
     // Abstände
-    padding: 20,            // oben/unten
+    padding: 0,            // oben/unten
     paddingLeft: 0,         // links
     paddingRight: 0,        // rechts
     // Mikrotypografie
