@@ -10,6 +10,7 @@ const HTMLCSSPlayground = () => {
   );
 
   const [styles, setStyles] = useState({
+    // Grundwerte
     backgroundColor: "#2e546f",
     color: "#ffffff",
     width: 600,
@@ -18,7 +19,19 @@ const HTMLCSSPlayground = () => {
     lineHeight: 1.5,
     fontSize: 18,
     textAlign: "justify",
-    padding: 20,
+    // Abstände
+    padding: 20,            // oben/unten
+    paddingLeft: 0,         // links
+    paddingRight: 0,        // rechts
+    // Mikrotypografie
+    textIndent: 0,          // Erste Zeile einrücken
+    paragraphSpacing: 0,    // Abstand zwischen Absätzen
+    hyphenate: "auto",      // "auto" | "manual" | "none"
+    lang: "de",             // Sprache für Silbentrennung
+    alignLast: "auto",      // "auto" | "left" | "right" | "center" | "justify"
+    wrapMode: "standard",   // "standard" | "long-words" | "anywhere" | "keep-all"
+    hangingPunctuation: false,
+    // Schrift
     fontFamily: "Montserrat, sans-serif",
   });
 
@@ -77,8 +90,46 @@ const HTMLCSSPlayground = () => {
     }
   }
 
+  // ---------- Mapping für Anzeige-Labels ----------
+  const wrapLabel = {
+    standard: "Standard",
+    "long-words": "Lange Wörter umbrechen",
+    anywhere: "Überall umbrechen",
+    "keep-all": "Nur an erlaubten Stellen",
+  };
+  const hyphenLabel = {
+    auto: "Automatisch",
+    manual: "Nur weiche Trennstellen",
+    none: "Keine",
+  };
+  const alignLastLabel = {
+    auto: "Automatisch",
+    left: "Links",
+    center: "Zentriert",
+    right: "Rechts",
+    justify: "Blocksatz",
+  };
+  const textAlignLabel = {
+    left: "Links",
+    center: "Zentriert",
+    right: "Rechts",
+    justify: "Blocksatz",
+  };
+
+  // ---------- Mapping für Zeilenumbruch-Profile (CSS) ----------
+  const wrapMap = {
+    standard:    { wordBreak: "normal",   overflowWrap: "break-word" },
+    "long-words":{ wordBreak: "break-word", overflowWrap: "break-word" },
+    anywhere:    { wordBreak: "normal",   overflowWrap: "anywhere" },
+    "keep-all":  { wordBreak: "keep-all", overflowWrap: "normal" },
+  };
+
   // ---------- Helpers ----------
   const cssTextBlock = () => {
+    const fam = styles.fontFamily;
+    const { wordBreak, overflowWrap } = wrapMap[styles.wrapMode] || wrapMap.standard;
+    const hyphenCSS = styles.hyphenate; // auto | manual | none
+
     return (
 `.text-block{
 background-color:${styles.backgroundColor};
@@ -89,17 +140,28 @@ word-spacing:${styles.wordSpacing}px;
 line-height:${styles.lineHeight};
 font-size:${styles.fontSize}px;
 text-align:${styles.textAlign};
-text-align-last:left;
-padding:${styles.padding}px;
-font-family:${styles.fontFamily};
+text-align-last:${styles.alignLast};
+padding-top:${styles.padding}px;
+padding-bottom:${styles.padding}px;
+padding-left:${styles.paddingLeft}px;
+padding-right:${styles.paddingRight}px;
+font-family:${fam};
 white-space:pre-wrap;
-hyphens:auto;
--webkit-hyphens:auto;
--moz-hyphens:auto;
-word-break:normal;
-overflow-wrap:break-word;
+hyphens:${hyphenCSS};
+-webkit-hyphens:${hyphenCSS};
+-moz-hyphens:${hyphenCSS};
+word-break:${wordBreak};
+overflow-wrap:${overflowWrap};
+${styles.hangingPunctuation ? "hanging-punctuation:first allow-end;" : ""}
 -webkit-font-smoothing:antialiased;
 -moz-osx-font-smoothing:grayscale;
+}
+.text-block p{
+  margin:0;
+  text-indent:${styles.textIndent}px;
+}
+.text-block p + p{
+  margin-top:${styles.paragraphSpacing}px;
 }`
     );
   };
@@ -146,18 +208,23 @@ overflow-wrap:break-word;
   // ---------- Export: foreignObject (1:1 fidelity) ----------
   const exportSVGForeignObject = () => {
     const { width, height } = measureBlock();
-
     const headStyle =
       `*{margin:0;box-sizing:border-box;}\n` +
       buildFontFace() + "\n" +
       cssTextBlock();
 
+    // Text in <p>-Absätze umwandeln
+    const paragraphs = (text || "").split(/\n{2,}/);
+    const htmlParagraphs = paragraphs
+      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`)
+      .join("");
+
     const html =
-`<div xmlns="http://www.w3.org/1999/xhtml">
+`<div xmlns="http://www.w3.org/1999/xhtml" lang="${styles.lang}">
   <style>
 ${headStyle}
   </style>
-  <div class="text-block">${escapeHtml(text)}</div>
+  <div class="text-block">${htmlParagraphs}</div>
 </div>`;
 
     const svg =
@@ -183,6 +250,24 @@ ${headStyle}
     URL.revokeObjectURL(url);
   };
 
+  // ----------- Rendering-Helfer: Absätze/Zeilenumbrüche ----------
+  const renderParagraphs = (value) => {
+    const paras = (value || "").split(/\n{2,}/);
+    return paras.map((para, idx) => {
+      const lines = para.split("\n");
+      return (
+        <p key={idx}>
+          {lines.map((ln, i) => (
+            <React.Fragment key={i}>
+              {ln}
+              {i < lines.length - 1 ? <br /> : null}
+            </React.Fragment>
+          ))}
+        </p>
+      );
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -195,19 +280,24 @@ ${headStyle}
 
             {/* Text Input */}
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Text eingeben:</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Text eingeben
+              </label>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                className="w-full h-32 p-3 border border-gray-300 rounded-md resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Gib hier deinen Text ein..."
+                className="w-full h-36 p-3 border border-gray-300 rounded-md resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Gib hier deinen Text ein... Absätze mit Leerzeile trennen (Enter + Enter)."
               />
             </div>
 
             {/* Farben */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Hintergrundfarbe:</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Hintergrundfarbe</label>
+                  <span className="text-xs text-gray-500">{styles.backgroundColor}</span>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -243,7 +333,10 @@ ${headStyle}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Textfarbe:</label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Textfarbe</label>
+                  <span className="text-xs text-gray-500">{styles.color}</span>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="color"
@@ -261,107 +354,278 @@ ${headStyle}
               </div>
             </div>
 
-            {/* Schriftart */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Schriftart:</label>
-              <select
-                value={styles.fontFamily}
-                onChange={(e) => updateStyle("fontFamily", e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
-              >
-                {fonts.map((font) => (
-                  <option key={font} value={font} style={{ fontFamily: font }}>
-                    {font.split(",")[0]}
-                  </option>
-                ))}
-              </select>
+            {/* Schrift & Breite */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Schriftart</label>
+                  <span className="text-xs text-gray-500">Aktuell: {styles.fontFamily.split(",")[0]}</span>
+                </div>
+                <select
+                  value={styles.fontFamily}
+                  onChange={(e) => updateStyle("fontFamily", e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+                >
+                  {fonts.map((font) => (
+                    <option key={font} value={font} style={{ fontFamily: font }}>
+                      {font.split(",")[0]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Block-Breite</label>
+                  <span className="text-xs text-gray-500">{styles.width} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="200"
+                  max="800"
+                  value={styles.width}
+                  onChange={(e) => updateStyle("width", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
             </div>
 
-            {/* Block-Breite */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Block-Breite: {styles.width}px</label>
-              <input
-                type="range"
-                min="200"
-                max="800"
-                value={styles.width}
-                onChange={(e) => updateStyle("width", parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
+            {/* Typo-Grundwerte */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Schriftgröße</label>
+                  <span className="text-xs text-gray-500">{styles.fontSize} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="12"
+                  max="48"
+                  value={styles.fontSize}
+                  onChange={(e) => updateStyle("fontSize", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Zeilenhöhe</label>
+                  <span className="text-xs text-gray-500">{styles.lineHeight}</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.1"
+                  value={styles.lineHeight}
+                  onChange={(e) => updateStyle("lineHeight", parseFloat(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Buchstabenabstand</label>
+                  <span className="text-xs text-gray-500">{styles.letterSpacing} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="-2"
+                  max="5"
+                  step="0.1"
+                  value={styles.letterSpacing}
+                  onChange={(e) => updateStyle("letterSpacing", parseFloat(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Wortabstand</label>
+                  <span className="text-xs text-gray-500">{styles.wordSpacing} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="-5"
+                  max="10"
+                  step="0.5"
+                  value={styles.wordSpacing}
+                  onChange={(e) => updateStyle("wordSpacing", parseFloat(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
             </div>
 
-            {/* Schriftgröße */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Schriftgröße: {styles.fontSize}px</label>
-              <input
-                type="range"
-                min="12"
-                max="48"
-                value={styles.fontSize}
-                onChange={(e) => updateStyle("fontSize", parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
+            {/* Mikrotypografie */}
+            <div className="mt-8 space-y-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Erste Zeile einrücken</label>
+                  <span className="text-xs text-gray-500">{styles.textIndent} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="60"
+                  value={styles.textIndent}
+                  onChange={(e) => updateStyle("textIndent", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Abstand zwischen Absätzen</label>
+                  <span className="text-xs text-gray-500">{styles.paragraphSpacing} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="48"
+                  value={styles.paragraphSpacing}
+                  onChange={(e) => updateStyle("paragraphSpacing", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Silbentrennung</label>
+                  </div>
+                  <select
+                    value={styles.hyphenate}
+                    onChange={(e) => updateStyle("hyphenate", e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded"
+                  >
+                    <option value="auto">Automatisch</option>
+                    <option value="manual">Nur bei weichen Trennstellen</option>
+                    <option value="none">Keine</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Sprache</label>
+                  </div>
+                  <select
+                    value={styles.lang}
+                    onChange={(e) => updateStyle("lang", e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded"
+                  >
+                    <option value="de">Deutsch</option>
+                    <option value="en">Englisch</option>
+                    <option value="fr">Französisch</option>
+                    <option value="es">Spanisch</option>
+                    <option value="it">Italienisch</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Ausrichtung</label>
+                  </div>
+                  <select
+                    value={styles.textAlign}
+                    onChange={(e) => updateStyle("textAlign", e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded"
+                  >
+                    <option value="left">Links</option>
+                    <option value="center">Zentriert</option>
+                    <option value="right">Rechts</option>
+                    <option value="justify">Blocksatz</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Letzte Zeile</label>
+                  </div>
+                  <select
+                    value={styles.alignLast}
+                    onChange={(e) => updateStyle("alignLast", e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded"
+                  >
+                    <option value="auto">Automatisch</option>
+                    <option value="left">Links</option>
+                    <option value="center">Zentriert</option>
+                    <option value="right">Rechts</option>
+                    <option value="justify">Blocksatz</option>
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Zeilenumbruch-Regeln</label>
+                  </div>
+                  <select
+                    value={styles.wrapMode}
+                    onChange={(e) => updateStyle("wrapMode", e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded"
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="long-words">Lange Wörter umbrechen</option>
+                    <option value="anywhere">Überall umbrechen</option>
+                    <option value="keep-all">Nur an erlaubten Stellen</option>
+                  </select>
+                </div>
+
+              </div>
             </div>
 
-            {/* Letter Spacing */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Buchstabenabstand: {styles.letterSpacing}px</label>
-              <input
-                type="range"
-                min="-2"
-                max="5"
-                step="0.1"
-                value={styles.letterSpacing}
-                onChange={(e) => updateStyle("letterSpacing", parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
+            {/* Innenabstände */}
+            <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Innenabstand o/u</label>
+                  <span className="text-xs text-gray-500">{styles.padding} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="50"
+                  value={styles.padding}
+                  onChange={(e) => updateStyle("padding", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Innenabstand links</label>
+                  <span className="text-xs text-gray-500">{styles.paddingLeft} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="60"
+                  value={styles.paddingLeft}
+                  onChange={(e) => updateStyle("paddingLeft", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Innenabstand rechts</label>
+                  <span className="text-xs text-gray-500">{styles.paddingRight} px</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="60"
+                  value={styles.paddingRight}
+                  onChange={(e) => updateStyle("paddingRight", parseInt(e.target.value))}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                />
+              </div>
             </div>
 
-            {/* Word Spacing */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Wortabstand: {styles.wordSpacing}px</label>
-              <input
-                type="range"
-                min="-5"
-                max="10"
-                step="0.5"
-                value={styles.wordSpacing}
-                onChange={(e) => updateStyle("wordSpacing", parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-
-            {/* Line Height */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Zeilenhöhe: {styles.lineHeight}</label>
-              <input
-                type="range"
-                min="1"
-                max="3"
-                step="0.1"
-                value={styles.lineHeight}
-                onChange={(e) => updateStyle("lineHeight", parseFloat(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-
-            {/* Padding */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Innenabstand: {styles.padding}px</label>
-              <input
-                type="range"
-                min="0"
-                max="50"
-                value={styles.padding}
-                onChange={(e) => updateStyle("padding", parseInt(e.target.value))}
-                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-              />
-            </div>
-
-            {/* Reset Button */}
+            {/* Reset */}
             <button
               onClick={() =>
-                setStyles({
+                setStyles((prev) => ({
+                  ...prev,
                   backgroundColor: "#ffffff",
                   color: "#000000",
                   width: 600,
@@ -371,10 +635,19 @@ ${headStyle}
                   fontSize: 16,
                   textAlign: "justify",
                   padding: 20,
+                  paddingLeft: 0,
+                  paddingRight: 0,
+                  textIndent: 0,
+                  paragraphSpacing: 0,
+                  hyphenate: "auto",
+                  lang: "de",
+                  alignLast: "auto",
+                  wrapMode: "standard",
+                  hangingPunctuation: false,
                   fontFamily: "Arial, sans-serif",
-                })
+                }))
               }
-              className="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
+              className="mt-6 w-full bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 px-4 rounded transition-colors"
             >
               Zurücksetzen
             </button>
@@ -400,6 +673,7 @@ ${headStyle}
             >
               <div
                 ref={blockRef}
+                lang={styles.lang}
                 style={{
                   backgroundColor: styles.backgroundColor,
                   color: styles.color,
@@ -410,13 +684,32 @@ ${headStyle}
                   lineHeight: styles.lineHeight,
                   fontSize: `${styles.fontSize}px`,
                   textAlign: styles.textAlign,
-                  padding: `${styles.padding}px`,
+                  paddingTop: `${styles.padding}px`,
+                  paddingBottom: `${styles.padding}px`,
+                  paddingLeft: `${styles.paddingLeft}px`,
+                  paddingRight: `${styles.paddingRight}px`,
                   fontFamily: styles.fontFamily,
                   borderRadius: "0px",
+                  // Zeilenumbruch-Profile live anwenden
+                  wordBreak: wrapMap[styles.wrapMode]?.wordBreak || "normal",
+                  overflowWrap: wrapMap[styles.wrapMode]?.overflowWrap || "break-word",
+                  // Silbentrennung live
+                  hyphens: styles.hyphenate,
+                  WebkitHyphens: styles.hyphenate,
+                  MozHyphens: styles.hyphenate,
+                  // Optischer Rand
+                  hangingPunctuation: styles.hangingPunctuation ? "first allow-end" : "none",
                 }}
                 className="transition-all duration-200"
               >
-                {text || "Hier wird dein Text angezeigt..."}
+                <div
+                  style={{
+                    textAlignLast: styles.alignLast,
+                  }}
+                  className="text-block"
+                >
+                  {renderParagraphs(text)}
+                </div>
               </div>
             </div>
 
