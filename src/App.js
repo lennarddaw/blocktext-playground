@@ -13,7 +13,7 @@ const HTMLCSSPlayground = () => {
     fontSize: 16,
     textAlign: 'justify',
     padding: 20,
-    fontFamily: 'Arial, sans-serif'
+    fontFamily: 'Montserrat, sans-serif'
   });
 
   const updateStyle = (property, value) => {
@@ -21,7 +21,7 @@ const HTMLCSSPlayground = () => {
   };
 
   const fonts = [
-    'Arial, sans-serif',
+    'Montserrat, sans-serif',
     'Helvetica, sans-serif', 
     'Georgia, serif',
     'Times New Roman, serif',
