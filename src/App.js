@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 
 const HTMLCSSPlayground = () => {
-  const [text, setText] = useState('Hier ist dein Beispieltext. Du kannst diesen Text bearbeiten und verschiedene Typografie-Einstellungen ausprobieren. Der Text wird als Blocksatz dargestellt und du kannst alle wichtigen Parameter anpassen.');
+  const [text, setText] = useState('Das Thema: Verschattung als architektonisches Gestaltungselement. Anders, ungewöhnlich und provokant wirkt diese Architektur als Zeichen unserer Zeit ganz selbstverständlich neben dem Backsteingebäude des alten Bahnhofs in Montabaur. Die oberen Stockwerke beider Gebäudeblocks haben jeweils eine Penthouse-Artrium-Wohnung mit einem exklusiven Rundumblick über Montabaur und den Westerwald. Alle Zimmer haben einen Ausgang auf die jeweils innenliegende Terrasse im Loungestyle.');
   
   const [styles, setStyles] = useState({
-    backgroundColor: '#ffffff',
-    color: '#000000',
+    backgroundColor: '#2e546f',
+    color: '#ffffff',
     width: 600,
     letterSpacing: 0,
     wordSpacing: 0,
     lineHeight: 1.5,
-    fontSize: 16,
+    fontSize: 18,
     textAlign: 'justify',
     padding: 20,
     fontFamily: 'Montserrat, sans-serif'
