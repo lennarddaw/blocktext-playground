@@ -1,4 +1,11 @@
 import React, { useMemo, useRef, useState, useEffect } from "react";
+import opentype from 'opentype.js';
+
+// Font Data URI - replace with actual base64-encoded WOFF2 data if available
+const MONTSERRAT_WOFF2_DATA = ""; // Placeholder - add actual base64 WOFF2 data here
+
+// Font cache to avoid reloading
+const fontCache = new Map();
 
 // 1:1 SVG export mit eingebetteter lokaler Schrift (foreignObject)
 // - Lädt Montserrat Variable-TTF automatisch aus /public/fonts/montserrat/
@@ -89,6 +96,386 @@ const HTMLCSSPlayground = () => {
       console.warn("Font embed failed:", e);
     }
   }
+
+  // ---------- Font loading for outline export ----------
+// ---------- Font loading for outline export (robust) ----------
+const loadFont = async () => {
+  // nur den Primärnamen ohne Fallbacks nehmen
+  const fontName = (styles.fontFamily || '').split(',')[0].trim();
+
+  // Wir unterstützen im Outlines-Export explizit Montserrat
+  // (andere Web-/Systemfonts werden NICHT aus /public geladen)
+  const isMontserrat = /^montserrat$/i.test(fontName);
+
+  // Cache-Hit?
+  if (fontCache.has(fontName)) return fontCache.get(fontName);
+
+  try {
+    let fontUrl = null;
+
+    // 1) Bevorzugt: eingebettete Data-URI aus autoEmbed (TTF)
+    if (isMontserrat && fontDataUrl && fontDataUrl.startsWith('data:font/ttf')) {
+      fontUrl = fontDataUrl; // z. B. "data:font/ttf;base64,AAAA..."
+    }
+
+    // 2) Lokale TTF unter /public (funktioniert out-of-the-box mit CRA/Vite)
+    if (!fontUrl && isMontserrat) {
+      fontUrl = '/fonts/montserrat/Montserrat-VariableFont_wght.ttf';
+    }
+
+    // 3) Optionaler WOFF2-Fallback, falls vorhanden
+    if (!fontUrl && isMontserrat) {
+      fontUrl = '/fonts/montserrat/Montserrat.woff2';
+    }
+
+    // 4) Wenn kein Montserrat gewählt ist: Fall back auf Montserrat TTF,
+    //    damit der Export verlässlich eine echte Datei hat.
+    if (!fontUrl) {
+      console.warn('Nicht unterstützte Schrift im Outlines-Export; fallback auf Montserrat.');
+      fontUrl = '/fonts/montserrat/Montserrat-VariableFont_wght.ttf';
+    }
+
+    const font = await opentype.load(fontUrl);
+    fontCache.set(fontName, font);
+    return font;
+  } catch (err) {
+    console.error('opentype.load failed:', err);
+    return null; // exportSVGOutlines zeigt bereits eine nutzerfreundliche Meldung
+  }
+};
+
+  // ---------- Text tokenization ----------
+  const tokenizeText = (text) => {
+    const tokens = [];
+    const paragraphs = text.split(/\n\s*\n/);
+    
+    paragraphs.forEach((paragraph, pIndex) => {
+      if (pIndex > 0) {
+        tokens.push({ type: 'paragraph', text: '', width: 0 });
+      }
+      
+      const lines = paragraph.split('\n');
+      lines.forEach((line, lIndex) => {
+        if (lIndex > 0) {
+          tokens.push({ type: 'newline', text: '', width: 0 });
+        }
+        
+        // Split by spaces but preserve them
+        const parts = line.split(/(\s+)/);
+        parts.forEach(part => {
+          if (!part) return;
+          
+          if (/^\s+$/.test(part)) {
+            // Space token
+            if (part === ' ') {
+              tokens.push({ type: 'space', text: ' ', width: 0 });
+            } else if (part === '\u00A0') {
+              tokens.push({ type: 'nbsp', text: '\u00A0', width: 0 });
+            } else {
+              // Multiple spaces - treat as individual spaces
+              for (let i = 0; i < part.length; i++) {
+                tokens.push({ type: 'space', text: ' ', width: 0 });
+              }
+            }
+          } else {
+            // Word token - may contain soft hyphens
+            tokens.push({ type: 'word', text: part, width: 0 });
+          }
+        });
+      });
+    });
+    
+    return tokens;
+  };
+
+  // ---------- Token width measurement ----------
+  const measureTokenWidth = (font, token, fontSize, letterSpacing, wordSpacing) => {
+    if (!font) return 0;
+    
+    if (token.type === 'space') {
+      const spaceWidth = font.getAdvanceWidth(' ', fontSize);
+      return spaceWidth + wordSpacing;
+    }
+    
+    if (token.type === 'nbsp') {
+      const spaceWidth = font.getAdvanceWidth('\u00A0', fontSize);
+      return spaceWidth + wordSpacing;
+    }
+    
+    if (token.type === 'word') {
+      let totalWidth = 0;
+      const text = token.text.replace(/\u00AD/g, ''); // Remove soft hyphens for width calculation
+      
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const glyph = font.charToGlyph(char);
+        if (glyph) {
+          totalWidth += glyph.advanceWidth / font.unitsPerEm * fontSize;
+        }
+        if (i < text.length - 1) {
+          totalWidth += letterSpacing;
+        }
+      }
+      
+      return totalWidth;
+    }
+    
+    return 0;
+  };
+
+  // ---------- Line layout algorithm ----------
+  const layoutLines = (tokens, font, params) => {
+    const lines = [];
+    let currentLine = [];
+    let currentWidth = 0;
+    let currentLineSpaces = 0;
+    
+    const { width: blockWidth, fontSize, letterSpacing, wordSpacing } = params;
+    
+    for (let i = 0; i < tokens.length; i++) {
+      const token = tokens[i];
+      
+      if (token.type === 'paragraph' || token.type === 'newline') {
+        // End current line
+        if (currentLine.length > 0) {
+          lines.push({
+            tokens: currentLine,
+            naturalWidth: currentWidth,
+            numSpaces: currentLineSpaces,
+            endsWithHyphen: false
+          });
+        }
+        currentLine = [];
+        currentWidth = 0;
+        currentLineSpaces = 0;
+        continue;
+      }
+      
+      const tokenWidth = measureTokenWidth(font, token, fontSize, letterSpacing, wordSpacing);
+      token.width = tokenWidth;
+      
+      // Check if token fits in current line
+      if (currentWidth + tokenWidth <= blockWidth || currentLine.length === 0) {
+        currentLine.push(token);
+        currentWidth += tokenWidth;
+        if (token.type === 'space') {
+          currentLineSpaces++;
+        }
+      } else {
+        // Token doesn't fit - handle word breaking for long words
+        if (token.type === 'word' && token.text.includes('\u00AD')) {
+          // Try to break at soft hyphen
+          const parts = token.text.split('\u00AD');
+          let bestBreakIndex = -1;
+          let testWidth = currentWidth;
+          
+          for (let j = 0; j < parts.length - 1; j++) {
+            const partText = parts.slice(0, j + 1).join('');
+            const partWidth = measureTokenWidth(font, { type: 'word', text: partText }, fontSize, letterSpacing, wordSpacing);
+            const hyphenWidth = measureTokenWidth(font, { type: 'word', text: '-' }, fontSize, letterSpacing, wordSpacing);
+            
+            if (testWidth + partWidth + hyphenWidth <= blockWidth) {
+              bestBreakIndex = j;
+            } else {
+              break;
+            }
+          }
+          
+          if (bestBreakIndex >= 0) {
+            // Break at soft hyphen
+            const beforeHyphen = parts.slice(0, bestBreakIndex + 1).join('');
+            const afterHyphen = parts.slice(bestBreakIndex + 1).join('\u00AD');
+            
+            // Add first part with hyphen to current line
+            const firstPart = { type: 'word', text: beforeHyphen, width: 0 };
+            firstPart.width = measureTokenWidth(font, firstPart, fontSize, letterSpacing, wordSpacing);
+            const hyphenToken = { type: 'word', text: '-', width: 0 };
+            hyphenToken.width = measureTokenWidth(font, hyphenToken, fontSize, letterSpacing, wordSpacing);
+            
+            currentLine.push(firstPart, hyphenToken);
+            lines.push({
+              tokens: currentLine,
+              naturalWidth: currentWidth + firstPart.width + hyphenToken.width,
+              numSpaces: currentLineSpaces,
+              endsWithHyphen: true
+            });
+            
+            // Start new line with remaining part
+            const remainingToken = { type: 'word', text: afterHyphen, width: tokenWidth };
+            currentLine = [remainingToken];
+            currentWidth = remainingToken.width;
+            currentLineSpaces = 0;
+            continue;
+          }
+        }
+        
+        // No break possible or regular line break
+        if (currentLine.length > 0) {
+          lines.push({
+            tokens: currentLine,
+            naturalWidth: currentWidth,
+            numSpaces: currentLineSpaces,
+            endsWithHyphen: false
+          });
+        }
+        
+        currentLine = [token];
+        currentWidth = tokenWidth;
+        currentLineSpaces = token.type === 'space' ? 1 : 0;
+      }
+    }
+    
+    // Add final line
+    if (currentLine.length > 0) {
+      lines.push({
+        tokens: currentLine,
+        naturalWidth: currentWidth,
+        numSpaces: currentLineSpaces,
+        endsWithHyphen: false
+      });
+    }
+    
+    return lines;
+  };
+
+  // ---------- Path generation ----------
+  const buildPathData = (font, lines, params) => {
+    if (!font || !lines.length) return '';
+    
+    const {
+      fontSize,
+      lineHeight,
+      letterSpacing,
+      wordSpacing,
+      textAlign,
+      textAlignLast,
+      paddingLeft,
+      paddingTop,
+      width: blockWidth
+    } = params;
+    
+    const ascent = font.ascender / font.unitsPerEm * fontSize;
+    const lineAdvance = Math.round(fontSize * lineHeight);
+    let allPaths = [];
+    
+    lines.forEach((line, lineIndex) => {
+      const y = paddingTop + ascent + lineIndex * lineAdvance;
+      let x = paddingLeft;
+      
+      // Determine alignment for this line
+      const isLastLineOfParagraph = lineIndex === lines.length - 1 || 
+        (lineIndex < lines.length - 1 && lines[lineIndex + 1].tokens[0]?.type === 'paragraph');
+      
+      const currentAlign = isLastLineOfParagraph ? 
+        (textAlignLast === 'auto' ? textAlign : textAlignLast) : textAlign;
+      
+      let offsetX = 0;
+      let extraSpacePerWord = 0;
+      
+      if (currentAlign === 'center') {
+        offsetX = (blockWidth - line.naturalWidth) / 2;
+      } else if (currentAlign === 'right') {
+        offsetX = blockWidth - line.naturalWidth;
+      } else if (currentAlign === 'justify' && line.numSpaces > 0 && !isLastLineOfParagraph) {
+        const extraSpace = blockWidth - line.naturalWidth;
+        extraSpacePerWord = extraSpace / line.numSpaces;
+      }
+      
+      x += offsetX;
+      
+      line.tokens.forEach(token => {
+        if (token.type === 'word') {
+          // Generate path for each character
+          const text = token.text.replace(/\u00AD/g, ''); // Remove soft hyphens
+          let charX = x;
+          
+          for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const glyph = font.charToGlyph(char);
+            
+            if (glyph && glyph.path) {
+              const glyphPath = glyph.getPath(charX, y, fontSize);
+              if (glyphPath) {
+                allPaths.push(glyphPath.toPathData());
+              }
+            }
+            
+            if (glyph) {
+              charX += glyph.advanceWidth / font.unitsPerEm * fontSize;
+            }
+            if (i < text.length - 1) {
+              charX += letterSpacing;
+            }
+          }
+          
+          x = charX;
+        } else if (token.type === 'space') {
+          const spaceWidth = font.getAdvanceWidth(' ', fontSize);
+          x += spaceWidth + wordSpacing + extraSpacePerWord;
+        } else if (token.type === 'nbsp') {
+          const spaceWidth = font.getAdvanceWidth('\u00A0', fontSize);
+          x += spaceWidth + wordSpacing;
+        }
+      });
+    });
+    
+    return allPaths.join(' ');
+  };
+
+  // ---------- Main outline export function ----------
+  const exportSVGOutlines = async () => {
+    try {
+      const font = await loadFont();
+      if (!font) {
+        alert('Font konnte nicht geladen werden. Bitte überprüfen Sie, ob die Schriftdatei verfügbar ist.');
+        return;
+      }
+      
+      const tokens = tokenizeText(text);
+      
+      const layoutParams = {
+        width: styles.width,
+        fontSize: styles.fontSize,
+        lineHeight: styles.lineHeight,
+        letterSpacing: styles.letterSpacing,
+        wordSpacing: styles.wordSpacing,
+        textAlign: styles.textAlign,
+        textAlignLast: styles.alignLast,
+        paddingLeft: styles.paddingLeft,
+        paddingTop: styles.padding
+      };
+      
+      const lines = layoutLines(tokens, font, layoutParams);
+      const pathData = buildPathData(font, lines, layoutParams);
+      
+      // Calculate SVG dimensions
+      const svgWidth = styles.paddingLeft + styles.width + styles.paddingRight;
+      const lineAdvance = Math.round(styles.fontSize * styles.lineHeight);
+      const svgHeight = styles.padding + 
+        (lines.length > 0 ? lines.length * lineAdvance - (lineAdvance - styles.fontSize) : styles.fontSize) + 
+        styles.padding;
+      
+      // Build SVG
+      const escapedText = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+      
+      const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">
+  <desc>${escapedText}</desc>
+  <rect width="100%" height="100%" fill="${styles.backgroundColor}"/>
+  ${pathData ? `<path d="${pathData}" fill="${styles.color}"/>` : ''}
+</svg>`;
+
+      triggerDownload(svg, "blocktext_outlines.svg");
+      
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export fehlgeschlagen: ' + error.message);
+    }
+  };
 
   // ---------- Mapping für Anzeige-Labels ----------
   const wrapLabel = {
@@ -653,12 +1040,19 @@ ${headStyle}
             </button>
 
             {/* Export */}
-            <div className="mt-6">
+            <div className="mt-6 space-y-3">
               <button
                 onClick={exportSVGForeignObject}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
                 Export SVG – 1:1 (embedded Montserrat)
+              </button>
+              
+              <button
+                onClick={exportSVGOutlines}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded transition-colors"
+              >
+                Export SVG – Outlines (Full Path)
               </button>
             </div>
           </div>
