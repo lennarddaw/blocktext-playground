@@ -98,51 +98,37 @@ const HTMLCSSPlayground = () => {
   }
 
   // ---------- Font loading for outline export ----------
-// ---------- Font loading for outline export (robust) ----------
-const loadFont = async () => {
-  // nur den Primärnamen ohne Fallbacks nehmen
-  const fontName = (styles.fontFamily || '').split(',')[0].trim();
-
-  // Wir unterstützen im Outlines-Export explizit Montserrat
-  // (andere Web-/Systemfonts werden NICHT aus /public geladen)
-  const isMontserrat = /^montserrat$/i.test(fontName);
-
-  // Cache-Hit?
-  if (fontCache.has(fontName)) return fontCache.get(fontName);
-
-  try {
-    let fontUrl = null;
-
-    // 1) Bevorzugt: eingebettete Data-URI aus autoEmbed (TTF)
-    if (isMontserrat && fontDataUrl && fontDataUrl.startsWith('data:font/ttf')) {
-      fontUrl = fontDataUrl; // z. B. "data:font/ttf;base64,AAAA..."
+  const loadFont = async () => {
+    const fontName = styles.fontFamily.split(',')[0].trim();
+    
+    if (fontCache.has(fontName)) {
+      return fontCache.get(fontName);
     }
 
-    // 2) Lokale TTF unter /public (funktioniert out-of-the-box mit CRA/Vite)
-    if (!fontUrl && isMontserrat) {
-      fontUrl = '/fonts/montserrat/Montserrat-VariableFont_wght.ttf';
-    }
+    try {
+      let fontUrl;
+      
+      // Try local WOFF2 first
+      if (fontName === 'Montserrat') {
+        if (MONTSERRAT_WOFF2_DATA) {
+          fontUrl = `data:font/woff2;base64,${MONTSERRAT_WOFF2_DATA}`;
+        } else {
+          fontUrl = '/fonts/montserrat/Montserrat.woff2';
+        }
+      } else {
+        // For other fonts, try to construct a reasonable path
+        fontUrl = `/fonts/${fontName.toLowerCase().replace(/\s+/g, '-')}.woff2`;
+      }
 
-    // 3) Optionaler WOFF2-Fallback, falls vorhanden
-    if (!fontUrl && isMontserrat) {
-      fontUrl = '/fonts/montserrat/Montserrat.woff2';
+      const font = await opentype.load(fontUrl);
+      fontCache.set(fontName, font);
+      return font;
+    } catch (error) {
+      console.warn('Font loading failed, using fallback:', error);
+      // Try to load a fallback system font or return null
+      return null;
     }
-
-    // 4) Wenn kein Montserrat gewählt ist: Fall back auf Montserrat TTF,
-    //    damit der Export verlässlich eine echte Datei hat.
-    if (!fontUrl) {
-      console.warn('Nicht unterstützte Schrift im Outlines-Export; fallback auf Montserrat.');
-      fontUrl = '/fonts/montserrat/Montserrat-VariableFont_wght.ttf';
-    }
-
-    const font = await opentype.load(fontUrl);
-    fontCache.set(fontName, font);
-    return font;
-  } catch (err) {
-    console.error('opentype.load failed:', err);
-    return null; // exportSVGOutlines zeigt bereits eine nutzerfreundliche Meldung
-  }
-};
+  };
 
   // ---------- Text tokenization ----------
   const tokenizeText = (text) => {
@@ -477,32 +463,6 @@ const loadFont = async () => {
     }
   };
 
-  // ---------- Mapping für Anzeige-Labels ----------
-  const wrapLabel = {
-    standard: "Standard",
-    "long-words": "Lange Wörter umbrechen",
-    anywhere: "Überall umbrechen",
-    "keep-all": "Nur an erlaubten Stellen",
-  };
-  const hyphenLabel = {
-    auto: "Automatisch",
-    manual: "Nur weiche Trennstellen",
-    none: "Keine",
-  };
-  const alignLastLabel = {
-    auto: "Automatisch",
-    left: "Links",
-    center: "Zentriert",
-    right: "Rechts",
-    justify: "Blocksatz",
-  };
-  const textAlignLabel = {
-    left: "Links",
-    center: "Zentriert",
-    right: "Rechts",
-    justify: "Blocksatz",
-  };
-
   // ---------- Mapping für Zeilenumbruch-Profile (CSS) ----------
   const wrapMap = {
     standard:    { wordBreak: "normal",   overflowWrap: "break-word" },
@@ -624,6 +584,87 @@ ${headStyle}
 
     triggerDownload(svg, "typography_export_1to1.svg");
   };
+
+// ---------- Export: PNG (3x DPI) aus foreignObject-SVG (taint-sicher) ----------
+const exportPNG = async () => {
+  try {
+    const { width, height } = measureBlock();
+
+    // CSS + eingebettete Fonts wie beim 1:1 SVG
+    const headStyle =
+      `*{margin:0;box-sizing:border-box;}\n` +
+      buildFontFace() + "\n" +
+      cssTextBlock();
+
+    // Text in <p>-Absätze wie beim 1:1 SVG
+    const paragraphs = (text || "").split(/\n{2,}/);
+    const htmlParagraphs = paragraphs
+      .map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br/>")}</p>`)
+      .join("");
+
+    const html =
+`<div xmlns="http://www.w3.org/1999/xhtml" lang="${styles.lang}">
+  <style>
+${headStyle}
+  </style>
+  <div class="text-block">${htmlParagraphs}</div>
+</div>`;
+
+    const svg =
+`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <foreignObject x="0" y="0" width="${width}" height="${height}">
+    ${html}
+  </foreignObject>
+</svg>`;
+
+    // Sanitize: entferne url(...) mit Nicht-data:-Quellen
+    const safeSvg = svg.replace(/url\((?!['"]?data:)[^)]+\)/gi, 'none');
+
+    // SVG -> Image (Data-URL) -> Canvas (3x)
+    const dataUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(safeSvg);
+
+    const img = new Image();
+    img.crossOrigin = "anonymous"; // harmless for data:
+    img.onload = () => {
+      const scale = 3; // 3x DPI
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(width * scale));
+      canvas.height = Math.max(1, Math.floor(height * scale));
+      const ctx = canvas.getContext("2d");
+
+      // sauber skalieren
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+      // optional: Hintergrund füllen (falls Browser transparent rendert)
+      ctx.fillStyle = styles.backgroundColor || "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+
+      ctx.drawImage(img, 0, 0);
+
+      // Download als PNG
+      canvas.toBlob((pngBlob) => {
+        if (!pngBlob) {
+          alert("PNG-Export fehlgeschlagen (Blob leer).");
+          return;
+        }
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(pngBlob);
+        a.download = "typography_export_1to1@3x.png";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, "image/png");
+    };
+    img.onerror = () => {
+      alert("PNG-Export fehlgeschlagen (Bild konnte nicht geladen werden).");
+    };
+    img.src = dataUrl;
+  } catch (err) {
+    console.error("PNG export failed:", err);
+    alert("PNG-Export fehlgeschlagen: " + (err?.message || String(err)));
+  }
+};
 
   const triggerDownload = (svgString, filename) => {
     const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
@@ -1053,6 +1094,13 @@ ${headStyle}
                 className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded transition-colors"
               >
                 Export SVG – Outlines (Full Path)
+              </button>
+              
+              <button
+                onClick={exportPNG}
+                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-2 px-4 rounded transition-colors"
+              >
+                Export PNG – High Quality (3x DPI)
               </button>
             </div>
           </div>
